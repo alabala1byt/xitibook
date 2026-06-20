@@ -1,0 +1,19 @@
+@import "tailwindcss";
+
+:root {
+  --primary: #5b8def;
+  --primary-light: #e8f0fe;
+  --success: #34c759;
+  --success-light: #e6f9ed;
+  --danger: #ff3b30;
+  --danger-light: #fee8e8;
+}
+
+body {
+  font-family: -apple-system, 'PingFang SC', 'Microsoft YaHei', 'Helvetica Neue', sans-serif;
+  background: linear-gradient(150deg, #ece9f5 0%, #fef6e6 55%, #e5f3fb 100%);
+  background-attachment: fixed;
+  min-height: 100vh;
+  color: #1a1a2e;
+  -webkit-font-smoothing: antialiased;
+}
