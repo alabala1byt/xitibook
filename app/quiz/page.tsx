@@ -12,13 +12,29 @@ export default function StudentHome() {
   const [chapters, setChapters] = useState<Chapter[]>([])
   const [qCounts, setQCounts]   = useState<Record<number, number>>({})
 
-  useEffect(() => {
+  function load() {
     const chs = getChapters()
     const qs  = getQuestions()
     setChapters(chs)
     const counts: Record<number, number> = {}
     chs.forEach(c => { counts[c.id] = qs.filter(q => q.chapterId === c.id).length })
     setQCounts(counts)
+  }
+
+  useEffect(() => {
+    load()
+    function onStorage(e: StorageEvent) {
+      if (e.key === 'xt_chs' || e.key === 'xt_qs') load()
+    }
+    function onVisible() {
+      if (document.visibilityState === 'visible') load()
+    }
+    window.addEventListener('storage', onStorage)
+    document.addEventListener('visibilitychange', onVisible)
+    return () => {
+      window.removeEventListener('storage', onStorage)
+      document.removeEventListener('visibilitychange', onVisible)
+    }
   }, [])
 
   if (!user) return null

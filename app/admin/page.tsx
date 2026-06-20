@@ -10,13 +10,22 @@ export default function AdminHome() {
   const router = useRouter()
   const [stats, setStats] = useState({ chs: 0, qs: 0, stus: 0, sess: 0 })
 
-  useEffect(() => {
+  function load() {
     setStats({
       chs:  getChapters().length,
       qs:   getQuestions().length,
       stus: getStudents().length,
       sess: getSessions().filter(s => s.completedAt).length,
     })
+  }
+
+  useEffect(() => {
+    load()
+    function onVisible() {
+      if (document.visibilityState === 'visible') load()
+    }
+    document.addEventListener('visibilitychange', onVisible)
+    return () => document.removeEventListener('visibilitychange', onVisible)
   }, [])
 
   if (!user) return null
