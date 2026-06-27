@@ -1,31 +1,20 @@
 'use client'
 import { usePathname, useRouter } from 'next/navigation'
-import { useEffect, useState } from 'react'
-import { getUser } from '@/lib/storage'
 
-const adminTabs = [
-  { href: '/admin',           icon: '🏠', label: '首页',  exact: true },
-  { href: '/admin/chapters',  icon: '📂', label: '题库' },
-  { href: '/admin/students',  icon: '👥', label: '学生' },
-  { href: '/profile',         icon: '👤', label: '我的' },
-]
-const studentTabs = [
-  { href: '/quiz',            icon: '🏠', label: '首页',  exact: true },
-  { href: '/wrong-answers',   icon: '📝', label: '错题本' },
-  { href: '/profile',         icon: '👤', label: '我的' },
+// Unified bottom navigation — no roles. Every signed-in user can manage their
+// own question bank (题库), practice (练习), review mistakes (错题), and view
+// their profile (我的).
+const tabs = [
+  { href: '/admin', icon: '🏠', label: '首页', exact: true },
+  { href: '/admin/chapters', icon: '📂', label: '题库' },
+  { href: '/quiz', icon: '✏️', label: '练习' },
+  { href: '/wrong-answers', icon: '📝', label: '错题' },
+  { href: '/profile', icon: '👤', label: '我的' },
 ]
 
 export default function BottomNav() {
   const pathname = usePathname()
-  const router   = useRouter()
-  const [tabs, setTabs] = useState<typeof adminTabs>([])
-
-  useEffect(() => {
-    const u = getUser()
-    if (u) setTabs(u.role === 'admin' ? adminTabs : studentTabs)
-  }, [])
-
-  if (!tabs.length) return null
+  const router = useRouter()
 
   const active = (t: { href: string; exact?: boolean }) =>
     t.exact ? pathname === t.href : pathname.startsWith(t.href)

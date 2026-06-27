@@ -1,22 +1,44 @@
 'use client'
 import { useEffect, useState } from 'react'
 import { useRouter } from 'next/navigation'
-import { getUser } from '@/lib/storage'
+import { createClient } from '@/lib/supabase/client'
 import type { User } from '@/lib/types'
 
-export function useAuth(role?: 'admin' | 'student') {
+const supabase = createClient()
+
+// Reads the Supabase session. Because @supabase/ssr stores the session in a
+// cookie (kept fresh by proxy.ts), a logged-in user stays logged in on refresh.
+// There are no roles — every signed-in user manages and practices their own bank.
+export function useAuth() {
   const router = useRouter()
   const [user, setUser] = useState<User | null>(null)
+  const [loading, setLoading] = useState(true)
 
   useEffect(() => {
-    const u = getUser()
-    if (!u) { router.replace('/login'); return }
-    if (role && u.role !== role) {
-      router.replace(u.role === 'admin' ? '/admin' : '/quiz')
-      return
-    }
-    setUser(u)
-  }, [router, role])
+    let active = true
 
-  return user
+    supabase.auth.getUser().then(({ data: { user: u } }) => {
+      if (!active) return
+      if (!u) {
+        setLoading(false)
+        router.replace('/login')
+        return
+      }
+      setUser({ id: u.id, email: u.email || '' })
+      setLoading(false)
+    })
+
+    // React to sign-out / token expiry happening elsewhere.
+    const { data: sub } = supabase.auth.onAuthStateChange((_event, session) => {
+      if (!active) return
+      if (!session?.user) router.replace('/login')
+    })
+
+    return () => {
+      active = false
+      sub.subscription.unsubscribe()
+    }
+  }, [router])
+
+  return { user, loading }
 }

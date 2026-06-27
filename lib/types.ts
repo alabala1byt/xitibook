@@ -1,12 +1,15 @@
+// Domain types used across the app. IDs are UUID strings (Supabase primary keys).
+// The DB columns use snake_case; lib/db.ts maps rows <-> these camelCase shapes.
+
 export interface Chapter {
-  id: number
+  id: string
   name: string
   desc?: string
 }
 
 export interface Question {
-  id: number
-  chapterId: number
+  id: string
+  chapterId: string
   question: string
   options: string[]
   answer: number
@@ -14,29 +17,22 @@ export interface Question {
 }
 
 export interface User {
-  username: string
-  role: 'admin' | 'student'
+  id: string
+  email: string
 }
 
 export interface WrongAnswer {
-  questionId: number
+  id: string
+  questionId: string
   selectedIndex: number
-  username: string
 }
 
 export interface QuizSession {
-  id: number
-  username: string
-  chapterId: number
+  id: string
+  chapterId: string
   startedAt: string
   completedAt?: string
   totalQ: number
   correct: number
   accuracy?: number
-}
-
-export interface Student {
-  username: string
-  firstSeenAt: string
-  lastActiveAt: string
 }

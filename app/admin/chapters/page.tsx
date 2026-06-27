@@ -4,53 +4,68 @@ import { useRouter } from 'next/navigation'
 import { useAuth } from '@/app/hooks/useAuth'
 import BottomNav from '@/app/components/BottomNav'
 import Modal from '@/app/components/Modal'
-import { getChapters, setChapters, getQuestions, setQuestions, nextId } from '@/lib/storage'
+import { listChapters, listQuestions, createChapter, updateChapter, deleteChapter } from '@/lib/db'
 import type { Chapter } from '@/lib/types'
 
 export default function AdminChapters() {
-  const user   = useAuth('admin')
+  const { user, loading } = useAuth()
   const router = useRouter()
   const [chapters, setChaptersState] = useState<Chapter[]>([])
-  const [qCounts, setQCounts]        = useState<Record<number, number>>({})
-  const [modal, setModal]            = useState<'add' | 'edit' | null>(null)
-  const [editId, setEditId]          = useState<number | null>(null)
-  const [chName, setChName]          = useState('')
-  const [chDesc, setChDesc]          = useState('')
+  const [qCounts, setQCounts] = useState<Record<string, number>>({})
+  const [loadingData, setLoadingData] = useState(true)
+  const [modal, setModal] = useState<'add' | 'edit' | null>(null)
+  const [editId, setEditId] = useState<string | null>(null)
+  const [chName, setChName] = useState('')
+  const [chDesc, setChDesc] = useState('')
 
-  function load() {
-    const chs = getChapters()
-    const qs  = getQuestions()
-    setChaptersState(chs)
-    const counts: Record<number, number> = {}
-    chs.forEach(c => { counts[c.id] = qs.filter(q => q.chapterId === c.id).length })
-    setQCounts(counts)
+  async function load() {
+    try {
+      const [chs, qs] = await Promise.all([listChapters(), listQuestions()])
+      const counts: Record<string, number> = {}
+      chs.forEach(c => { counts[c.id] = qs.filter(q => q.chapterId === c.id).length })
+      setChaptersState(chs)
+      setQCounts(counts)
+    } catch (e) {
+      console.error('load chapters failed', e)
+    } finally {
+      setLoadingData(false)
+    }
   }
 
-  useEffect(() => { load() }, [])
+  useEffect(() => { if (user) load() }, [user])
 
+  if (loading || loadingData) {
+    return <div className="min-h-screen flex items-center justify-center text-sm" style={{ color: '#9ca3af' }}>加载中…</div>
+  }
   if (!user) return null
 
   function openAdd() { setChName(''); setChDesc(''); setModal('add') }
   function openEdit(ch: Chapter) { setEditId(ch.id); setChName(ch.name); setChDesc(ch.desc || ''); setModal('edit') }
 
-  function save() {
+  async function save() {
     if (!chName.trim()) { alert('请输入章节名称'); return }
-    const chs = getChapters()
-    if (modal === 'edit' && editId) {
-      const i = chs.findIndex(c => c.id === editId)
-      if (i !== -1) { chs[i].name = chName.trim(); chs[i].desc = chDesc.trim() }
-    } else {
-      chs.push({ id: nextId(chs), name: chName.trim(), desc: chDesc.trim() })
+    try {
+      if (modal === 'edit' && editId) {
+        await updateChapter(editId, chName.trim(), chDesc)
+      } else {
+        await createChapter(chName.trim(), chDesc)
+      }
+      setModal(null)
+      await load()
+    } catch (e: any) {
+      alert('保存失败：' + (e?.message || '未知错误'))
     }
-    setChapters(chs); setModal(null); load()
   }
 
-  function del(id: number) {
-    const ch = getChapters().find(c => c.id === id)
+  async function del(id: string) {
+    const ch = chapters.find(c => c.id === id)
     if (!ch || !confirm(`确定删除「${ch.name}」及其所有题目？`)) return
-    setChapters(getChapters().filter(c => c.id !== id))
-    setQuestions(getQuestions().filter(q => q.chapterId !== id))
-    load()
+    try {
+      await deleteChapter(id)
+      await load()
+    } catch (e: any) {
+      alert('删除失败：' + (e?.message || '未知错误'))
+    }
   }
 
   const cardStyle = { background: 'rgba(255,255,255,0.88)', border: '1px solid rgba(0,0,0,0.08)', boxShadow: '0 1px 8px rgba(0,0,0,0.06)' }

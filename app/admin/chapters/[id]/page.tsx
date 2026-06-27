@@ -4,60 +4,94 @@ import { useParams, useRouter } from 'next/navigation'
 import { useAuth } from '@/app/hooks/useAuth'
 import BottomNav from '@/app/components/BottomNav'
 import Modal from '@/app/components/Modal'
-import { getChapters, getQuestions, setQuestions, nextId } from '@/lib/storage'
+import { listChapters, listQuestions, createQuestion, updateQuestion, deleteQuestion } from '@/lib/db'
 import type { Question } from '@/lib/types'
 
 const LABELS = ['A', 'B', 'C', 'D']
 
 export default function ChapterDetail() {
-  const user   = useAuth('admin')
+  const { user, loading } = useAuth()
   const router = useRouter()
   const { id } = useParams()
-  const chId   = Number(id)
+  const chId = (Array.isArray(id) ? id[0] : id) as string
 
-  const [chName, setChName]   = useState('')
+  const [chName, setChName] = useState('')
   const [questions, setQState] = useState<Question[]>([])
-  const [modal, setModal]      = useState(false)
-  const [editQId, setEditQId]  = useState<number | null>(null)
-  const [qText, setQText]      = useState('')
-  const [opts, setOpts]        = useState(['', '', '', ''])
-  const [ans, setAns]          = useState(0)
-  const [exp, setExp]          = useState('')
+  const [loadingData, setLoadingData] = useState(true)
+  const [modal, setModal] = useState(false)
+  const [editQId, setEditQId] = useState<string | null>(null)
+  const [qText, setQText] = useState('')
+  const [opts, setOpts] = useState(['', '', '', ''])
+  const [ans, setAns] = useState(0)
+  const [exp, setExp] = useState('')
 
-  function load() {
-    const ch = getChapters().find(c => c.id === chId)
-    if (!ch) { router.replace('/admin/chapters'); return }
-    setChName(ch.name)
-    setQState(getQuestions().filter(q => q.chapterId === chId))
+  async function load() {
+    try {
+      const [chs, qs] = await Promise.all([
+        listChapters(),
+        listQuestions(chId),
+      ])
+      const ch = chs.find(c => c.id === chId)
+      if (!ch) { router.replace('/admin/chapters'); return }
+      setChName(ch.name)
+      setQState(qs)
+    } catch (e) {
+      console.error('load chapter detail failed', e)
+    } finally {
+      setLoadingData(false)
+    }
   }
 
-  useEffect(() => { load() }, [chId])
+  useEffect(() => { if (user && chId) load() }, [user, chId])
+
+  if (loading || loadingData) {
+    return <div className="min-h-screen flex items-center justify-center text-sm" style={{ color: '#9ca3af' }}>加载中…</div>
+  }
   if (!user) return null
 
   function openAdd() {
-    setEditQId(null); setQText(''); setOpts(['','','','']); setAns(0); setExp(''); setModal(true)
+    setEditQId(null); setQText(''); setOpts(['', '', '', '']); setAns(0); setExp(''); setModal(true)
   }
 
   function openEdit(q: Question) {
     setEditQId(q.id); setQText(q.question); setOpts([...q.options]); setAns(q.answer); setExp(q.explanation || ''); setModal(true)
   }
 
-  function save() {
-    if (!qText.trim())         { alert('请输入题目内容'); return }
+  async function save() {
+    if (!qText.trim()) { alert('请输入题目内容'); return }
     if (opts.some(o => !o.trim())) { alert('请填写所有四个选项'); return }
-    const qs = getQuestions()
-    if (editQId !== null) {
-      const i = qs.findIndex(q => q.id === editQId)
-      if (i !== -1) qs[i] = { ...qs[i], question: qText.trim(), options: opts.map(o => o.trim()), answer: ans, explanation: exp.trim() }
-    } else {
-      qs.push({ id: nextId(qs), chapterId: chId, question: qText.trim(), options: opts.map(o => o.trim()), answer: ans, explanation: exp.trim() })
+    try {
+      if (editQId) {
+        await updateQuestion(editQId, {
+          question: qText.trim(),
+          options: opts.map(o => o.trim()),
+          answer: ans,
+          explanation: exp,
+        })
+      } else {
+        await createQuestion({
+          chapterId: chId,
+          question: qText.trim(),
+          options: opts.map(o => o.trim()),
+          answer: ans,
+          explanation: exp,
+        })
+      }
+      setModal(false)
+      await load()
+    } catch (e: any) {
+      alert('保存失败：' + (e?.message || '未知错误'))
     }
-    setQuestions(qs); setModal(false); load()
   }
 
-  function del(qid: number) {
+  async function del(qid: string) {
     if (!confirm('确定删除这道题？')) return
-    setQuestions(getQuestions().filter(q => q.id !== qid)); load()
+    try {
+      await deleteQuestion(qid)
+      await load()
+    } catch (e: any) {
+      alert('删除失败：' + (e?.message || '未知错误'))
+    }
   }
 
   const cardStyle = { background: 'rgba(255,255,255,0.88)', border: '1px solid rgba(0,0,0,0.08)', boxShadow: '0 1px 8px rgba(0,0,0,0.06)' }

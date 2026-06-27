@@ -3,40 +3,48 @@ import { useEffect, useState } from 'react'
 import { useRouter } from 'next/navigation'
 import { useAuth } from '@/app/hooks/useAuth'
 import BottomNav from '@/app/components/BottomNav'
-import { getChapters, getQuestions, getSessions, getStudents, getWrong, removeUser } from '@/lib/storage'
+import { listSessions, listWrong } from '@/lib/db'
+import { createClient } from '@/lib/supabase/client'
 
 export default function Profile() {
-  const user   = useAuth()
+  const { user, loading } = useAuth()
   const router = useRouter()
   const [stats, setStats] = useState<{ label: string; value: string | number }[]>([])
+  const [loadingData, setLoadingData] = useState(true)
 
   useEffect(() => {
     if (!user) return
-    if (user.role === 'admin') {
-      setStats([
-        { label: '章节数',   value: getChapters().length },
-        { label: '题目数',   value: getQuestions().length },
-        { label: '学生人数', value: getStudents().length },
-        { label: '练习次数', value: getSessions().filter(s => s.completedAt).length },
-      ])
-    } else {
-      const sess  = getSessions().filter(s => s.username === user.username && s.completedAt)
-      const wrong = getWrong().filter(w => w.username === user.username)
-      const tq    = sess.reduce((a, s) => a + s.totalQ, 0)
-      const tc    = sess.reduce((a, s) => a + s.correct, 0)
-      setStats([
-        { label: '练习次数',   value: sess.length },
-        { label: '综合正确率', value: tq ? `${Math.round(tc / tq * 100)}%` : '—' },
-        { label: '总答题数',   value: tq },
-        { label: '错题数',     value: wrong.length },
-      ])
-    }
+    let active = true
+    ;(async () => {
+      try {
+        const [sess, wrong] = await Promise.all([listSessions(), listWrong()])
+        if (!active) return
+        const done = sess.filter(s => s.completedAt)
+        const tq = done.reduce((a, s) => a + s.totalQ, 0)
+        const tc = done.reduce((a, s) => a + s.correct, 0)
+        setStats([
+          { label: '练习次数', value: done.length },
+          { label: '综合正确率', value: tq ? `${Math.round(tc / tq * 100)}%` : '—' },
+          { label: '总答题数', value: tq },
+          { label: '错题数', value: wrong.length },
+        ])
+      } catch (e) {
+        console.error('load profile stats failed', e)
+      } finally {
+        if (active) setLoadingData(false)
+      }
+    })()
+    return () => { active = false }
   }, [user])
 
+  if (loading || loadingData) {
+    return <div className="min-h-screen flex items-center justify-center text-sm" style={{ color: '#9ca3af' }}>加载中…</div>
+  }
   if (!user) return null
 
-  function logout() {
-    removeUser()
+  async function logout() {
+    const supabase = createClient()
+    await supabase.auth.signOut()
     router.push('/login')
   }
 
@@ -53,18 +61,16 @@ export default function Profile() {
         <div className="rounded-2xl p-5 flex items-center gap-4 mb-5" style={{ background: 'rgba(255,255,255,0.88)', border: '1px solid rgba(0,0,0,0.08)', boxShadow: '0 1px 8px rgba(0,0,0,0.06)' }}>
           <div className="rounded-full flex items-center justify-center font-bold text-white flex-shrink-0"
             style={{ width: 52, height: 52, fontSize: 22, background: 'linear-gradient(135deg,#5b8def,#a78bfa)' }}>
-            {user.username[0].toUpperCase()}
+            {user.email[0].toUpperCase()}
           </div>
-          <div>
-            <div className="text-lg font-bold">{user.username}</div>
-            <div className="text-xs mt-0.5" style={{ color: '#6b7280' }}>{user.role === 'admin' ? '管理员' : '学生'}</div>
+          <div className="min-w-0">
+            <div className="text-lg font-bold truncate">{user.email}</div>
+            <div className="text-xs mt-0.5" style={{ color: '#6b7280' }}>账号已同步到云端</div>
           </div>
         </div>
 
         {/* Stats */}
-        <div className="text-xs font-bold uppercase tracking-wide mb-2.5" style={{ color: '#6b7280' }}>
-          {user.role === 'admin' ? '题库统计' : '学习情况'}
-        </div>
+        <div className="text-xs font-bold uppercase tracking-wide mb-2.5" style={{ color: '#6b7280' }}>学习情况</div>
         <div className="grid grid-cols-2 gap-2.5 mb-6">
           {stats.map((s, i) => (
             <div key={i} style={statStyle}>

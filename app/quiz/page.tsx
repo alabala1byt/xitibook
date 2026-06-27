@@ -3,40 +3,35 @@ import { useEffect, useState } from 'react'
 import { useRouter } from 'next/navigation'
 import { useAuth } from '@/app/hooks/useAuth'
 import BottomNav from '@/app/components/BottomNav'
-import { getChapters, getQuestions } from '@/lib/storage'
+import { listChapters, listQuestions } from '@/lib/db'
 import type { Chapter } from '@/lib/types'
 
 export default function StudentHome() {
-  const user   = useAuth('student')
+  const { user, loading } = useAuth()
   const router = useRouter()
   const [chapters, setChapters] = useState<Chapter[]>([])
-  const [qCounts, setQCounts]   = useState<Record<number, number>>({})
+  const [qCounts, setQCounts] = useState<Record<string, number>>({})
+  const [loadingData, setLoadingData] = useState(true)
 
-  function load() {
-    const chs = getChapters()
-    const qs  = getQuestions()
-    setChapters(chs)
-    const counts: Record<number, number> = {}
-    chs.forEach(c => { counts[c.id] = qs.filter(q => q.chapterId === c.id).length })
-    setQCounts(counts)
+  async function load() {
+    try {
+      const [chs, qs] = await Promise.all([listChapters(), listQuestions()])
+      const counts: Record<string, number> = {}
+      chs.forEach(c => { counts[c.id] = qs.filter(q => q.chapterId === c.id).length })
+      setChapters(chs)
+      setQCounts(counts)
+    } catch (e) {
+      console.error('load practice list failed', e)
+    } finally {
+      setLoadingData(false)
+    }
   }
 
-  useEffect(() => {
-    load()
-    function onStorage(e: StorageEvent) {
-      if (e.key === 'xt_chs' || e.key === 'xt_qs') load()
-    }
-    function onVisible() {
-      if (document.visibilityState === 'visible') load()
-    }
-    window.addEventListener('storage', onStorage)
-    document.addEventListener('visibilitychange', onVisible)
-    return () => {
-      window.removeEventListener('storage', onStorage)
-      document.removeEventListener('visibilitychange', onVisible)
-    }
-  }, [])
+  useEffect(() => { if (user) load() }, [user])
 
+  if (loading || loadingData) {
+    return <div className="min-h-screen flex items-center justify-center text-sm" style={{ color: '#9ca3af' }}>加载中…</div>
+  }
   if (!user) return null
 
   return (
@@ -44,12 +39,12 @@ export default function StudentHome() {
       <div className="px-5 pt-14 pb-4">
         <div className="flex items-center justify-between">
           <div>
-            <div className="text-2xl font-black">你好，{user.username}！</div>
-            <div className="text-sm mt-0.5" style={{ color: '#6b7280' }}>选择章节开始练习</div>
+            <div className="text-2xl font-black">开始练习</div>
+            <div className="text-sm mt-0.5" style={{ color: '#6b7280' }}>选择章节做题</div>
           </div>
           <div className="w-11 h-11 rounded-full flex items-center justify-center text-lg font-bold text-white"
             style={{ background: 'linear-gradient(135deg,#5b8def,#a78bfa)' }}>
-            {user.username[0].toUpperCase()}
+            {user.email[0].toUpperCase()}
           </div>
         </div>
       </div>
@@ -59,7 +54,7 @@ export default function StudentHome() {
           <div className="text-center py-12" style={{ color: '#6b7280' }}>
             <div className="text-5xl mb-3">📚</div>
             <div className="text-sm font-medium">暂无章节</div>
-            <div className="text-xs mt-1.5">管理员还没有添加内容</div>
+            <div className="text-xs mt-1.5">先去「题库」添加章节和题目</div>
           </div>
         ) : chapters.map(ch => {
           const qc = qCounts[ch.id] ?? 0

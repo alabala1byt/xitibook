@@ -2,7 +2,14 @@
 import { useEffect, useRef, useState } from 'react'
 import { useParams, useRouter } from 'next/navigation'
 import { useAuth } from '@/app/hooks/useAuth'
-import { getQuestions, getChapters, getSessions, setSessions, getWrong, setWrong, nextId } from '@/lib/storage'
+import {
+  listChapters,
+  listQuestions,
+  createSession,
+  completeSession,
+  deleteSession,
+  upsertWrong,
+} from '@/lib/db'
 import type { Question } from '@/lib/types'
 
 const L = ['A', 'B', 'C', 'D']
@@ -17,64 +24,69 @@ function shuffle<T>(arr: T[]): T[] {
 }
 
 export default function QuizPage() {
-  const user       = useAuth('student')
-  const router     = useRouter()
+  const { user, loading } = useAuth()
+  const router = useRouter()
   const { chapterId } = useParams()
-  const chId       = Number(chapterId)
+  const chId = (Array.isArray(chapterId) ? chapterId[0] : chapterId) as string
 
-  const [qs, setQs]           = useState<Question[]>([])
-  const [idx, setIdx]         = useState(0)
+  const [qs, setQs] = useState<Question[]>([])
+  const [idx, setIdx] = useState(0)
   const [correct, setCorrect] = useState(0)
   const [answered, setAnswered] = useState(false)
-  const [picked, setPicked]   = useState<number | null>(null)
-  const [done, setDone]       = useState(false)
-  const [chName, setChName]   = useState('')
-  const sidRef = useRef<number | null>(null)
+  const [picked, setPicked] = useState<number | null>(null)
+  const [done, setDone] = useState(false)
+  const [chName, setChName] = useState('')
+  const [loadingData, setLoadingData] = useState(true)
+  const sidRef = useRef<string | null>(null)
 
   useEffect(() => {
-    if (!user) return
-    const ch = getChapters().find(c => c.id === chId)
-    if (!ch) { router.replace('/quiz'); return }
-    setChName(ch.name)
-    const shuffled = shuffle(getQuestions().filter(q => q.chapterId === chId))
-    if (!shuffled.length) { router.replace('/quiz'); return }
-    setQs(shuffled)
-    // start session
-    const sess = getSessions()
-    const sid  = nextId(sess)
-    sidRef.current = sid
-    sess.push({ id: sid, username: user.username, chapterId: chId, startedAt: new Date().toISOString(), totalQ: shuffled.length, correct: 0 })
-    setSessions(sess)
+    if (!user || !chId) return
+    let active = true
+    ;(async () => {
+      try {
+        const [chs, qs] = await Promise.all([listChapters(), listQuestions(chId)])
+        if (!active) return
+        const ch = chs.find(c => c.id === chId)
+        if (!ch) { router.replace('/quiz'); return }
+        const shuffled = shuffle(qs)
+        if (!shuffled.length) { router.replace('/quiz'); return }
+        setChName(ch.name)
+        setQs(shuffled)
+        if (!sidRef.current) {
+          const sid = await createSession({ chapterId: chId, totalQ: shuffled.length })
+          if (!active) return
+          sidRef.current = sid
+        }
+      } catch (e) {
+        console.error('start quiz failed', e)
+      } finally {
+        if (active) setLoadingData(false)
+      }
+    })()
+    return () => { active = false }
   }, [user, chId, router])
 
   function pick(sel: number) {
-    if (answered || !user) return
+    if (answered) return
     setAnswered(true)
     setPicked(sel)
-    const q  = qs[idx]
-    const ok = sel === q.answer
-    if (ok) {
+    const q = qs[idx]
+    if (sel === q.answer) {
       setCorrect(c => c + 1)
     } else {
-      const wrong = getWrong()
-      const ei    = wrong.findIndex(w => w.questionId === q.id && w.username === user.username)
-      if (ei === -1) wrong.push({ questionId: q.id, selectedIndex: sel, username: user.username })
-      else wrong[ei].selectedIndex = sel
-      setWrong(wrong)
+      upsertWrong(q.id, sel).catch(e => console.error('record wrong failed', e))
     }
   }
 
-  function next(newCorrect: number) {
+  async function next(newCorrect: number) {
     if (idx + 1 >= qs.length) {
-      // finish
-      const sess = getSessions()
-      const i    = sess.findIndex(s => s.id === sidRef.current)
-      if (i !== -1) {
-        sess[i].completedAt = new Date().toISOString()
-        sess[i].correct     = newCorrect
-        sess[i].accuracy    = Math.round(newCorrect / qs.length * 100)
+      if (sidRef.current) {
+        try {
+          await completeSession(sidRef.current, newCorrect, qs.length)
+        } catch (e) {
+          console.error('complete session failed', e)
+        }
       }
-      setSessions(sess)
       setDone(true)
     } else {
       setIdx(i => i + 1)
@@ -83,29 +95,26 @@ export default function QuizPage() {
     }
   }
 
-  function exit() {
+  async function exit() {
     if (qs.length && !confirm('确定退出练习？')) return
-    if (sidRef.current !== null) {
-      const sess = getSessions()
-      const i    = sess.findIndex(s => s.id === sidRef.current && !s.completedAt)
-      if (i !== -1) sess.splice(i, 1)
-      setSessions(sess)
+    if (sidRef.current && !done) {
+      try { await deleteSession(sidRef.current) } catch (e) { console.error('delete session failed', e) }
     }
     router.push('/quiz')
   }
 
+  if (loading || loadingData) {
+    return <div className="min-h-screen flex items-center justify-center text-sm" style={{ color: '#9ca3af' }}>加载中…</div>
+  }
   if (!user || !qs.length) return null
 
-  const q     = qs[idx]
+  const q = qs[idx]
   const total = qs.length
-  const pct   = Math.round((done ? total : idx) / total * 100)
-
-  // track correct count for next() call
-  const curCorrect = answered && picked === q?.answer ? correct : correct
+  const pct = Math.round((done ? total : idx) / total * 100)
 
   if (done) {
     const score = correct
-    const acc   = Math.round(score / total * 100)
+    const acc = Math.round(score / total * 100)
     return (
       <div className="max-w-[480px] mx-auto flex flex-col items-center justify-center min-h-screen px-6 text-center">
         <div className="w-28 h-28 rounded-full flex flex-col items-center justify-center mb-5"

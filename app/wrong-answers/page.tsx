@@ -2,27 +2,58 @@
 import { useEffect, useState } from 'react'
 import { useAuth } from '@/app/hooks/useAuth'
 import BottomNav from '@/app/components/BottomNav'
-import { getWrong, getQuestions, getChapters } from '@/lib/storage'
+import { listWrong, listQuestions, listChapters } from '@/lib/db'
 
 const L = ['A', 'B', 'C', 'D']
 
+type Item = {
+  question: string
+  options: string[]
+  answer: number
+  explanation?: string
+  selectedIndex: number
+  chName?: string
+}
+
 export default function WrongAnswers() {
-  const user = useAuth('student')
-  const [items, setItems] = useState<{ question: string; options: string[]; answer: number; explanation?: string; selectedIndex: number; chName?: string }[]>([])
+  const { user, loading } = useAuth()
+  const [items, setItems] = useState<Item[]>([])
+  const [loadingData, setLoadingData] = useState(true)
 
   useEffect(() => {
     if (!user) return
-    const wrong = getWrong().filter(w => w.username === user.username)
-    const qs  = getQuestions()
-    const chs = getChapters()
-    setItems(wrong.map(w => {
-      const q  = qs.find(q => q.id === w.questionId)
-      if (!q) return null
-      const ch = chs.find(c => c.id === q.chapterId)
-      return { question: q.question, options: q.options, answer: q.answer, explanation: q.explanation, selectedIndex: w.selectedIndex, chName: ch?.name }
-    }).filter(Boolean) as typeof items)
+    let active = true
+    ;(async () => {
+      try {
+        const [wrong, qs, chs] = await Promise.all([listWrong(), listQuestions(), listChapters()])
+        if (!active) return
+        const result: Item[] = []
+        for (const w of wrong) {
+          const q = qs.find(x => x.id === w.questionId)
+          if (!q) continue
+          const ch = chs.find(c => c.id === q.chapterId)
+          result.push({
+            question: q.question,
+            options: q.options,
+            answer: q.answer,
+            explanation: q.explanation,
+            selectedIndex: w.selectedIndex,
+            chName: ch?.name,
+          })
+        }
+        setItems(result)
+      } catch (e) {
+        console.error('load wrong answers failed', e)
+      } finally {
+        if (active) setLoadingData(false)
+      }
+    })()
+    return () => { active = false }
   }, [user])
 
+  if (loading || loadingData) {
+    return <div className="min-h-screen flex items-center justify-center text-sm" style={{ color: '#9ca3af' }}>加载中…</div>
+  }
   if (!user) return null
 
   return (
