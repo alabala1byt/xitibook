@@ -4,8 +4,12 @@ import type { Chapter, Question, WrongAnswer, QuizSession } from '@/lib/types'
 // Async data layer backed by Supabase. Replaces the old localStorage layer
 // (lib/storage.ts). Every query is scoped to the signed-in user by RLS, and
 // inserts never send user_id (the column defaults to auth.uid()).
-
-const supabase = createClient()
+//
+// The browser client is created LAZILY inside each function (these run only
+// from useEffect in the browser), never at module load — so static prerendering
+// at build time does not require the Supabase env vars. createBrowserClient
+// caches its instance on the browser, so this is cheap.
+const getClient = () => createClient()
 
 /* ----------------------------- row mappers ----------------------------- */
 
@@ -62,7 +66,7 @@ const mapSession = (r: SessionRow): QuizSession => ({
 /* ------------------------------- chapters ------------------------------ */
 
 export async function listChapters(): Promise<Chapter[]> {
-  const { data, error } = await supabase
+  const { data, error } = await getClient()
     .from('chapters')
     .select('*')
     .order('created_at', { ascending: true })
@@ -71,7 +75,7 @@ export async function listChapters(): Promise<Chapter[]> {
 }
 
 export async function createChapter(name: string, desc?: string): Promise<Chapter> {
-  const { data, error } = await supabase
+  const { data, error } = await getClient()
     .from('chapters')
     .insert({ name, description: desc?.trim() || null })
     .select()
@@ -81,7 +85,7 @@ export async function createChapter(name: string, desc?: string): Promise<Chapte
 }
 
 export async function updateChapter(id: string, name: string, desc?: string): Promise<void> {
-  const { error } = await supabase
+  const { error } = await getClient()
     .from('chapters')
     .update({ name, description: desc?.trim() || null })
     .eq('id', id)
@@ -89,14 +93,14 @@ export async function updateChapter(id: string, name: string, desc?: string): Pr
 }
 
 export async function deleteChapter(id: string): Promise<void> {
-  const { error } = await supabase.from('chapters').delete().eq('id', id)
+  const { error } = await getClient().from('chapters').delete().eq('id', id)
   if (error) throw error
 }
 
 /* ------------------------------ questions ------------------------------ */
 
 export async function listQuestions(chapterId?: string): Promise<Question[]> {
-  let query = supabase.from('questions').select('*')
+  let query = getClient().from('questions').select('*')
   if (chapterId) query = query.eq('chapter_id', chapterId)
   const { data, error } = await query.order('created_at', { ascending: true })
   if (error) throw error
@@ -110,7 +114,7 @@ export async function createQuestion(input: {
   answer: number
   explanation?: string
 }): Promise<Question> {
-  const { data, error } = await supabase
+  const { data, error } = await getClient()
     .from('questions')
     .insert({
       chapter_id: input.chapterId,
@@ -129,7 +133,7 @@ export async function updateQuestion(
   id: string,
   input: { question: string; options: string[]; answer: number; explanation?: string }
 ): Promise<void> {
-  const { error } = await supabase
+  const { error } = await getClient()
     .from('questions')
     .update({
       question: input.question,
@@ -142,14 +146,14 @@ export async function updateQuestion(
 }
 
 export async function deleteQuestion(id: string): Promise<void> {
-  const { error } = await supabase.from('questions').delete().eq('id', id)
+  const { error } = await getClient().from('questions').delete().eq('id', id)
   if (error) throw error
 }
 
 /* --------------------------- wrong answers ----------------------------- */
 
 export async function listWrong(): Promise<WrongAnswer[]> {
-  const { data, error } = await supabase
+  const { data, error } = await getClient()
     .from('wrong_answers')
     .select('*')
     .order('created_at', { ascending: false })
@@ -160,7 +164,7 @@ export async function listWrong(): Promise<WrongAnswer[]> {
 // Upsert keyed on (user_id, question_id): answering the same question wrong
 // again updates the stored answer instead of creating a duplicate.
 export async function upsertWrong(questionId: string, selectedIndex: number): Promise<void> {
-  const { error } = await supabase
+  const { error } = await getClient()
     .from('wrong_answers')
     .upsert(
       { question_id: questionId, selected_index: selectedIndex },
@@ -172,7 +176,7 @@ export async function upsertWrong(questionId: string, selectedIndex: number): Pr
 /* --------------------------- quiz sessions ----------------------------- */
 
 export async function createSession(input: { chapterId: string; totalQ: number }): Promise<string> {
-  const { data, error } = await supabase
+  const { data, error } = await getClient()
     .from('quiz_sessions')
     .insert({ chapter_id: input.chapterId, total_questions: input.totalQ, correct_count: 0 })
     .select('id')
@@ -182,7 +186,7 @@ export async function createSession(input: { chapterId: string; totalQ: number }
 }
 
 export async function completeSession(id: string, correct: number, totalQ: number): Promise<void> {
-  const { error } = await supabase
+  const { error } = await getClient()
     .from('quiz_sessions')
     .update({
       completed_at: new Date().toISOString(),
@@ -194,12 +198,12 @@ export async function completeSession(id: string, correct: number, totalQ: numbe
 }
 
 export async function deleteSession(id: string): Promise<void> {
-  const { error } = await supabase.from('quiz_sessions').delete().eq('id', id)
+  const { error } = await getClient().from('quiz_sessions').delete().eq('id', id)
   if (error) throw error
 }
 
 export async function listSessions(): Promise<QuizSession[]> {
-  const { data, error } = await supabase
+  const { data, error } = await getClient()
     .from('quiz_sessions')
     .select('*')
     .order('started_at', { ascending: false })

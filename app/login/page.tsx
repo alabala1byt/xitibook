@@ -17,19 +17,19 @@ function translateError(message: string): string {
 
 export default function LoginPage() {
   const router = useRouter()
-  const supabase = createClient()
   const [mode, setMode] = useState<'in' | 'up'>('in')
   const [email, setEmail] = useState('')
   const [password, setPassword] = useState('')
   const [error, setError] = useState('')
   const [busy, setBusy] = useState(false)
 
-  // Already signed in? Skip straight to the app.
+  // Already signed in? Skip straight to the app. Client created lazily so this
+  // page can be statically prerendered without the Supabase env vars at build time.
   useEffect(() => {
-    supabase.auth.getUser().then(({ data: { user } }) => {
+    createClient().auth.getUser().then(({ data: { user } }) => {
       if (user) router.replace('/admin')
     })
-  }, [router, supabase])
+  }, [router])
 
   async function submit(e?: React.FormEvent) {
     e?.preventDefault()
@@ -39,10 +39,11 @@ export default function LoginPage() {
     if (password.length < 6) { setError('密码至少 6 位'); return }
 
     setBusy(true)
+    const sb = createClient()
     const { error } =
       mode === 'in'
-        ? await supabase.auth.signInWithPassword({ email: em, password })
-        : await supabase.auth.signUp({ email: em, password })
+        ? await sb.auth.signInWithPassword({ email: em, password })
+        : await sb.auth.signUp({ email: em, password })
     setBusy(false)
 
     if (error) { setError(translateError(error.message)); return }

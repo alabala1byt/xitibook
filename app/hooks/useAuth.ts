@@ -4,17 +4,19 @@ import { useRouter } from 'next/navigation'
 import { createClient } from '@/lib/supabase/client'
 import type { User } from '@/lib/types'
 
-const supabase = createClient()
-
 // Reads the Supabase session. Because @supabase/ssr stores the session in a
 // cookie (kept fresh by proxy.ts), a logged-in user stays logged in on refresh.
 // There are no roles — every signed-in user manages and practices their own bank.
+//
+// The client is created inside the effect (client-only), never at module load,
+// so static prerendering at build time does not require the Supabase env vars.
 export function useAuth() {
   const router = useRouter()
   const [user, setUser] = useState<User | null>(null)
   const [loading, setLoading] = useState(true)
 
   useEffect(() => {
+    const supabase = createClient()
     let active = true
 
     supabase.auth.getUser().then(({ data: { user: u } }) => {
